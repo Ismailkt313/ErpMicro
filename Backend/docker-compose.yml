@@ -1,0 +1,74 @@
+
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "db.adminCommand('ping').ok"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  employee-service:
+    build:
+      context: ./services/employee-service
+    restart: unless-stopped
+    environment:
+      PORT: 5001
+      MONGODB_URI: mongodb://mongo:27017/erpmicro_employees
+    ports:
+      - "5001:5001"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  attendance-service:
+    build:
+      context: ./services/attendance-service
+    restart: unless-stopped
+    environment:
+      PORT: 5002
+      MONGODB_URI: mongodb://mongo:27017/erpmicro_attendance
+      EMPLOYEE_SERVICE_URL: http://employee-service:5001
+    ports:
+      - "5002:5002"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      employee-service:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      EMPLOYEE_SERVICE_URL: http://employee-service:5001
+      ATTENDANCE_SERVICE_URL: http://attendance-service:5002
+    ports:
+      - "5000:5000"
+    depends_on:
+      - employee-service
+      - attendance-service
+
+  frontend:
+    build:
+      context: ../Frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: /api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-gateway
+
+volumes:
+  mongo_data:
